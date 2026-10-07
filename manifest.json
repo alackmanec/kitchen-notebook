@@ -1,0 +1,30 @@
+{
+  "name": "Kitchen Notebook \u2014 Google Drive",
+  "short_name": "Kitchen",
+  "start_url": "./",
+  "display": "standalone",
+  "background_color": "#f6f4ed",
+  "theme_color": "#294c3e",
+  "icons": [
+    {
+      "src": "./icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
+    {
+      "src": "./icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "./icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ],
+  "id": "./",
+  "scope": "./"
+}
