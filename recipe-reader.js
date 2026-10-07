@@ -17,14 +17,28 @@ const DriveRecipeReader={
   doc.querySelectorAll('script,style,nav,header,footer,form,noscript').forEach(n=>n.remove());let region=doc.querySelector('article')||doc.querySelector('main')||doc.body;
   let text=[...region.querySelectorAll('h1,h2,h3,p,li,tr')].map(n=>(n.textContent||'').trim()).filter(Boolean).join('\n'),result=parseTextOffline(text);if(!result.ingredients.length||!result.steps.length)throw Error('The full recipe could not be read from this page. Use accessible recipe text, a PDF or photos.');result.sourceUrl=url;result.source||=new URL(url).hostname;return result;
  },
+ async fetchPage(url){
+  const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),12000);
+  try{let response=await fetch(url,{credentials:'omit',signal:controller.signal});if(!response.ok)throw Error('Page did not load.');let html=await response.text();if(html.length>2_000_000)throw Error('Recipe page is too large.');return html}finally{clearTimeout(timer)}
+ },
+ readerPage(reader,url){
+  if(!/^https:\/\/script.google.com\/macros\/s\/[A-Za-z0-9_-]+\/exec$/.test(reader))throw Error('Use the deployed Google recipe-reader /exec address in Connection settings.');
+  return new Promise((resolve,reject)=>{
+   let name='kitchenRecipe_'+crypto.randomUUID().replace(/-/g,''),script=document.createElement('script'),timer;
+   const cleanup=()=>{clearTimeout(timer);script.remove();delete window[name]};
+   window[name]=result=>{cleanup();if(result?.error)return reject(Error(String(result.error)));if(typeof result?.html!=='string'||!result.html.trim())return reject(Error('The recipe reader returned no recipe text. Check its deployment, or use a PDF, photos or pasted text.'));if(result.html.length>2_000_000)return reject(Error('Recipe page is too large.'));resolve(result)};
+   script.src=reader+'?'+new URLSearchParams({url,callback:name});
+   script.onerror=()=>{cleanup();reject(Error('Unable to reach the Google recipe reader. Check that its /exec address is saved and the web app is deployed with access set to Anyone.'))};
+   timer=setTimeout(()=>{cleanup();reject(Error('The recipe reader did not respond within 30 seconds. Check its /exec address and deployment access (Anyone), then try again. You can also use a PDF, photos or pasted text.'))},30000);
+   document.head.append(script);
+  });
+ },
  async read(url){
   let parsed;try{parsed=new URL(url)}catch(e){throw Error('Enter a valid recipe URL.')}if(parsed.protocol!=='https:'||parsed.username||parsed.password)throw Error('Use a public https recipe link.');
-  let html;
-  try{let response=await fetch(parsed.href,{credentials:'omit',signal:AbortSignal.timeout(12000)});if(!response.ok)throw Error('Page did not load.');html=await response.text();if(html.length>2_000_000)throw Error('Recipe page is too large.')}catch(e){
-   let reader=DriveStore.config().recipeReaderUrl;if(!reader)throw Error('Web link reading needs the optional Google recipe reader. Add its address in Connection settings. Photos, PDFs and pasted text work now.');
-   if(!/^https:\/\/script.google.com\/macros\/s\/[A-Za-z0-9_-]+\/exec$/.test(reader))throw Error('Use the deployed Google recipe-reader /exec address.');
-   html=await new Promise((resolve,reject)=>{let name='kitchenRecipe_'+crypto.randomUUID().replace(/-/g,''),script=document.createElement('script'),timer;const cleanup=()=>{clearTimeout(timer);script.remove();delete window[name]};window[name]=result=>{cleanup();result.error?reject(Error(result.error)):resolve(result.html)};script.src=reader+'?'+new URLSearchParams({url:parsed.href,callback:name});script.onerror=()=>{cleanup();reject(Error('Unable to reach the Google recipe reader. Check its deployment access and address.'))};timer=setTimeout(()=>{cleanup();reject(Error('The recipe reader did not respond. Try again or import the recipe text.'))},30000);document.head.append(script)});
-  }
+  if(navigator.onLine===false)throw Error('Connect to the internet to read a recipe link. Saved recipes and prepared photo/PDF reading work offline.');
+  const reader=(DriveStore.config().recipeReaderUrl||'').trim();
+  if(reader){let result=await this.readerPage(reader,parsed.href);return this.fromHTML(result.html,result.url||parsed.href)}
+  let html;try{html=await this.fetchPage(parsed.href)}catch(e){throw Error('This website needs the Google recipe-link reader. Open Connection settings and add its deployed /exec address. See page 9 of your setup guide. You can also import a PDF, photos or pasted recipe text.')}
   return this.fromHTML(html,parsed.href);
  }
 };
