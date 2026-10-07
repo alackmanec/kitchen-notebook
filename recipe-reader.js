@@ -21,17 +21,25 @@ const DriveRecipeReader={
   const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),12000);
   try{let response=await fetch(url,{credentials:'omit',signal:controller.signal});if(!response.ok)throw Error('Page did not load.');let html=await response.text();if(html.length>2_000_000)throw Error('Recipe page is too large.');return html}finally{clearTimeout(timer)}
  },
- readerPage(reader,url){
+ async readerPage(reader,url){
   if(!/^https:\/\/script.google.com\/macros\/s\/[A-Za-z0-9_-]+\/exec$/.test(reader))throw Error('Use the deployed Google recipe-reader /exec address in Connection settings.');
-  return new Promise((resolve,reject)=>{
-   let name='kitchenRecipe_'+crypto.randomUUID().replace(/-/g,''),script=document.createElement('script'),timer;
-   const cleanup=()=>{clearTimeout(timer);script.remove();delete window[name]};
-   window[name]=result=>{cleanup();if(result?.error)return reject(Error(String(result.error)));if(typeof result?.html!=='string'||!result.html.trim())return reject(Error('The recipe reader returned no recipe text. Check its deployment, or use a PDF, photos or pasted text.'));if(result.html.length>2_000_000)return reject(Error('Recipe page is too large.'));resolve(result)};
-   script.src=reader+'?'+new URLSearchParams({url,callback:name});
-   script.onerror=()=>{cleanup();reject(Error('Unable to reach the Google recipe reader. Check that its /exec address is saved and the web app is deployed with access set to Anyone.'))};
-   timer=setTimeout(()=>{cleanup();reject(Error('The recipe reader did not respond within 30 seconds. Check its /exec address and deployment access (Anyone), then try again. You can also use a PDF, photos or pasted text.'))},30000);
-   document.head.append(script);
-  });
+  const name='kitchenRecipe_'+crypto.randomUUID().replace(/-/g,''),controller=new AbortController(),timer=setTimeout(()=>controller.abort(),30000);
+  let body;
+  try{
+   const response=await fetch(reader+'?'+new URLSearchParams({url,callback:name}),{credentials:'omit',signal:controller.signal});
+   if(!response.ok)throw Error('Reader returned HTTP '+response.status);
+   body=await response.text();
+  }catch(e){
+   if(e.name==='AbortError')throw Error('The recipe reader did not respond within 30 seconds. Try again, or use a PDF, photos or pasted text.');
+   throw Error('Unable to connect to the recipe reader. Check its /exec address and deployment access (Anyone). If those are correct, a browser extension or network filter may be blocking Google.');
+  }finally{clearTimeout(timer)}
+  const prefix=name+'(',text=body.trim();
+  if(!text.startsWith(prefix)||!text.endsWith(');'))throw Error('Google did not return recipe data. Check that the recipe reader is deployed with access set to Anyone and that the saved address ends in /exec.');
+  let result;try{result=JSON.parse(text.slice(prefix.length,-2))}catch(e){throw Error('The recipe reader returned invalid data. Try again.')}
+  if(result?.error)throw Error(String(result.error));
+  if(typeof result?.html!=='string'||!result.html.trim())throw Error('The recipe reader returned no recipe text. Use a PDF, photos or pasted text.');
+  if(result.html.length>2_000_000)throw Error('Recipe page is too large.');
+  return result;
  },
  async read(url){
   let parsed;try{parsed=new URL(url)}catch(e){throw Error('Enter a valid recipe URL.')}if(parsed.protocol!=='https:'||parsed.username||parsed.password)throw Error('Use a public https recipe link.');
